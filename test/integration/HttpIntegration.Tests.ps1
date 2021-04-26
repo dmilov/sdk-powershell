@@ -20,6 +20,7 @@ function Set-ServerHosting {
             $portBusy = sudo lsof -i -P -n | grep $port
             $port++            
         } while ($portBusy)
+        Write-Information "Enabling localhost test server TCP port $port"
         # Enable chosen port
         sudo iptables -A INPUT -p tcp --dport $port -j ACCEPT
     } else {
@@ -35,6 +36,7 @@ function Set-ServerHosting {
 function Restore-ServerHosting {
     if ($null -ne $script:testServerPort -and `
         [environment]::osversion.Platform -notlike 'win*') {
+            Write-Information "Disabling localhost test server TCP port $port"
             sudo iptables -A INPUT -p tcp --dport $port -j DROP
     }
 }

@@ -28,6 +28,8 @@ Describe "Client-Server Integration Tests" {
          -ArgumentList "$serverBinPath --urls=http://localhost:$port" `
           -PassThru `
           -NoNewWindow
+          
+          Start-Sleep -Seconds 30
 
          # $testServerUrl = "http://$($hostName):$($script:testServerPort)/"
 

@@ -12,7 +12,8 @@ param(
 Describe "Client-Server Integration Tests" {
    Context "Send And Receive CloudEvents over Http" {
      BeforeAll {
-         $testServerUrl = 'http://127.0.0.1:8080/'
+         iptables -A INPUT -p tcp --dport 52673 -j ACCEPT
+         $testServerUrl = 'http://127.0.0.1:52673/'
 
          $serverProcess = $null
 

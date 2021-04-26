@@ -12,31 +12,23 @@ param(
 
 Describe "Client-Server Integration Tests" {
    Context "Send And Receive CloudEvents over Http" {
-    
-    
-    function Restore-ServerHosting {
-        
-    }
 
-     BeforeAll {        
-        $hostName = '127.0.0.1'
-        $port = 52673
-        $serverUrl
-        # Get available port
-        if ([environment]::osversion.Platform -notlike 'win*') {
-            do {
-                $portBusy = sudo lsof -i -P -n | grep $port
-                $port++            
-            } while ($portBusy)
-            Write-Information "Enabling localhost test server TCP port $port"
-            # Enable chosen port
-            sudo iptables -A INPUT -p tcp --dport $port -j ACCEPT
-        } else {
-    
-        }
-    
-        $script:testServerPort = $port        
-         
+     BeforeAll {
+         $hostName = 'localhost'
+         $port = 52673
+
+         $script:testServerPort = $port
+
+         $serverProjPath = Join-Path (Join-Path $PSScriptRoot 'httpserver') 'WebServer.csproj'
+         dotnet build $serverProjPath
+
+         $serverBinPath = [io.Path]::Combine($PSScriptRoot, 'httpserver', 'bin', 'debug', 'netcoreapp3.1', 'WebServer.dll')
+         $script:serverProcess = Start-Process `
+         -FilePath 'dotnet' `
+         -ArgumentList "$serverBinPath --urls=http://localhost:5001" `
+          -PassThru `
+          -NoNewWindow
+
          $testServerUrl = "http://$($hostName):$($script:testServerPort)/"
 
          $serverProcess = $null
@@ -75,11 +67,12 @@ Describe "Client-Server Integration Tests" {
             $serverProcess | Wait-Process
          }
 
-         if ($null -ne $script:testServerPort -and `
-            [environment]::osversion.Platform -notlike 'win*') {
-                Write-Information "Disabling localhost test server TCP port $port"
-                sudo iptables -A INPUT -p tcp --dport $port -j DROP
-         }
+         Stop-Process $script:serverProcess
+      }
+
+      It 'Tests WebServer' {
+          $result = Invoke-RestMethod -Method get -Uri http://localhost:5001/WeatherForecast
+          $result | Should -Not -Be $null
       }
 
       It 'Echo binary content mode cloud events' {

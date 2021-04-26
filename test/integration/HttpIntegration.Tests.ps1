@@ -9,11 +9,41 @@ param(
    [string]
    $CloudEventsModulePath)
 
+function Set-ServerHosting {
+    $protocol = 'http'
+    $hostName = '127.0.0.1'
+    $port = 52673
+    $serverUrl
+    # Get available port
+    if ([environment]::osversion.Platform -notlike 'win*') {
+        do {
+            $portBusy = sudo lsof -i -P -n | grep $port
+            $port++            
+        } while ($portBusy)
+        # Enable chosen port
+        sudo iptables -A INPUT -p tcp --dport $port -j ACCEPT
+    } else {
+
+    }
+
+    $script:testServerPort = $port
+
+    # return server Url
+    "$protocol://$hostName:$port/"
+}
+
+function Restore-ServerHosting {
+    if ($null -ne $script:testServerPort -and `
+        [environment]::osversion.Platform -notlike 'win*') {
+            sudo iptables -A INPUT -p tcp --dport $port -j DROP
+    }
+}
+
 Describe "Client-Server Integration Tests" {
    Context "Send And Receive CloudEvents over Http" {
      BeforeAll {
-         sudo iptables -A INPUT -p tcp --dport 52673 -j ACCEPT
-         $testServerUrl = 'http://127.0.0.1:52673/'
+         
+         $testServerUrl = Set-ServerHosting
 
          $serverProcess = $null
 
@@ -50,6 +80,8 @@ Describe "Client-Server Integration Tests" {
              -not $serverProcess.HasExited) {
             $serverProcess | Wait-Process
          }
+
+         Restore-ServerHosting
       }
 
       It 'Echo binary content mode cloud events' {

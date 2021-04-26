@@ -9,8 +9,7 @@ param(
    [string]
    $CloudEventsModulePath)
 
-function Set-ServerHosting {
-    $protocol = 'http'
+function Set-ServerHosting {    
     $hostName = '127.0.0.1'
     $port = 52673
     $serverUrl
@@ -30,7 +29,7 @@ function Set-ServerHosting {
     $script:testServerPort = $port
 
     # return server Url
-    "$protocol://$hostName:$port/"
+    "http://$($hostName):$($script:testServerPort)/"
 }
 
 function Restore-ServerHosting {

@@ -22,7 +22,7 @@ Describe "Client-Server Integration Tests" {
          $serverProjPath = Join-Path (Join-Path $PSScriptRoot 'httpserver') 'WebServer.csproj'
          dotnet build $serverProjPath
 
-         $serverBinPath = (Get-ChildItem -Recurse -Path $PSScriptRoot -Filter 'WebServer.dll' | Where-Object {$_.FullName.Contains('bin')).FullName
+         $serverBinPath = (Get-ChildItem -Recurse -Path $PSScriptRoot -Filter 'WebServer.dll' | Where-Object {$_.FullName.Contains('bin')}).FullName
          $script:serverProcess = Start-Process `
          -FilePath 'dotnet' `
          -ArgumentList "$serverBinPath --urls=http://localhost:5051" `

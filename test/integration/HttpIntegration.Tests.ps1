@@ -12,7 +12,7 @@ param(
 Describe "Client-Server Integration Tests" {
    Context "Send And Receive CloudEvents over Http" {
      BeforeAll {
-         $testServerUrl = 'http://localhost:52673/'
+         $testServerUrl = 'http://127.0.0.1:3000/'
 
          $serverProcess = $null
 

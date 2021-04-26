@@ -9,42 +9,35 @@ param(
    [string]
    $CloudEventsModulePath)
 
-function Set-ServerHosting {    
-    $hostName = '127.0.0.1'
-    $port = 52673
-    $serverUrl
-    # Get available port
-    if ([environment]::osversion.Platform -notlike 'win*') {
-        do {
-            $portBusy = sudo lsof -i -P -n | grep $port
-            $port++            
-        } while ($portBusy)
-        Write-Information "Enabling localhost test server TCP port $port"
-        # Enable chosen port
-        sudo iptables -A INPUT -p tcp --dport $port -j ACCEPT
-    } else {
-
-    }
-
-    $script:testServerPort = $port
-
-    # return server Url
-    "http://$($hostName):$($script:testServerPort)/"
-}
-
-function Restore-ServerHosting {
-    if ($null -ne $script:testServerPort -and `
-        [environment]::osversion.Platform -notlike 'win*') {
-            Write-Information "Disabling localhost test server TCP port $port"
-            sudo iptables -A INPUT -p tcp --dport $port -j DROP
-    }
-}
 
 Describe "Client-Server Integration Tests" {
    Context "Send And Receive CloudEvents over Http" {
-     BeforeAll {
+    
+    
+    function Restore-ServerHosting {
+        
+    }
+
+     BeforeAll {        
+        $hostName = '127.0.0.1'
+        $port = 52673
+        $serverUrl
+        # Get available port
+        if ([environment]::osversion.Platform -notlike 'win*') {
+            do {
+                $portBusy = sudo lsof -i -P -n | grep $port
+                $port++            
+            } while ($portBusy)
+            Write-Information "Enabling localhost test server TCP port $port"
+            # Enable chosen port
+            sudo iptables -A INPUT -p tcp --dport $port -j ACCEPT
+        } else {
+    
+        }
+    
+        $script:testServerPort = $port        
          
-         $testServerUrl = Set-ServerHosting
+         $testServerUrl = "http://$($hostName):$($script:testServerPort)/"
 
          $serverProcess = $null
 
@@ -82,7 +75,11 @@ Describe "Client-Server Integration Tests" {
             $serverProcess | Wait-Process
          }
 
-         Restore-ServerHosting
+         if ($null -ne $script:testServerPort -and `
+            [environment]::osversion.Platform -notlike 'win*') {
+                Write-Information "Disabling localhost test server TCP port $port"
+                sudo iptables -A INPUT -p tcp --dport $port -j DROP
+         }
       }
 
       It 'Echo binary content mode cloud events' {

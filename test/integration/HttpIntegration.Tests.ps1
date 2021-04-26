@@ -15,7 +15,7 @@ Describe "Client-Server Integration Tests" {
 
      BeforeAll {
          $hostName = 'localhost'
-         $port = 52673
+         $port = 8000
 
          $script:testServerPort = $port
 
@@ -25,7 +25,7 @@ Describe "Client-Server Integration Tests" {
          $serverBinPath = (Get-ChildItem -Recurse -Path $PSScriptRoot -Filter 'WebServer.dll' | Where-Object {$_.FullName.Contains('bin')}).FullName
          $script:serverProcess = Start-Process `
          -FilePath 'dotnet' `
-         -ArgumentList "$serverBinPath --urls=http://localhost:5051" `
+         -ArgumentList "$serverBinPath --urls=http://localhost:$port" `
           -PassThru `
           -NoNewWindow
 
@@ -71,7 +71,7 @@ Describe "Client-Server Integration Tests" {
       }
 
       It 'Tests WebServer' {
-          $result = Invoke-RestMethod -Method get -Uri http://localhost:5051/WeatherForecast
+          $result = Invoke-RestMethod -Method get -Uri http://localhost:8000/WeatherForecast
           $result | Should -Not -Be $null
       }
 

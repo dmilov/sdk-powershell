@@ -4,303 +4,307 @@
 # **************************************************************************
 
 param(
-   [Parameter()]
-   [ValidateScript({Test-Path $_})]
-   [string]
-   $CloudEventsModulePath)
+    [Parameter()]
+    [ValidateScript( { Test-Path $_ })]
+    [string]
+    $CloudEventsModulePath)
 
 
 Describe "Client-Server Integration Tests" {
-   Context "Send And Receive CloudEvents over Http" {
+    Context "Send And Receive CloudEvents over Http" {
+        BeforeAll {
+            $testServerUrl = 'http://localhost:52673/'
 
-     BeforeAll {
-         $hostName = 'localhost'
-         $port = 8000
+            $serverProcess = $null
 
-         $script:testServerPort = $port
+            . (Join-Path $PSScriptRoot 'ProtocolConstants.ps1')
 
-         $serverProjPath = Join-Path (Join-Path $PSScriptRoot 'httpserver') 'WebServer.csproj'
-         dotnet build $serverProjPath
+            # Starts CloudEvent Test Server
+            $usePowerShell = (Get-Process -Id $pid).ProcessName
+            $serverScript = Join-Path $PSScriptRoot 'HttpServer.ps1'
+            $serverProcessArguments = "-Command $serverScript -CloudEventsModulePath '$CloudEventsModulePath' -ServerUrl '$testServerUrl'"
 
-         $serverBinPath = (Get-ChildItem -Recurse -Path $PSScriptRoot -Filter 'WebServer.dll' | Where-Object {$_.FullName.Contains('bin')}).FullName
-         $script:serverProcess = Start-Process `
-         -FilePath 'dotnet' `
-         -ArgumentList "$serverBinPath --urls=http://localhost:$port" `
-          -PassThru `
-          -NoNewWindow
-          
-          Start-Sleep -Seconds 30
+            $serverProcess = Start-Process `
+                -FilePath $usePowerShell `
+                -ArgumentList $serverProcessArguments `
+                -PassThru `
+                -NoNewWindow
 
-         # $testServerUrl = "http://$($hostName):$($script:testServerPort)/"
+            # Wait Server to Start
+            $serverPingRequest = `
+                New-CloudEvent `
+                    -Id ([Guid]::NewGuid()) `
+                    -Type $script:ServerPingType `
+                    -Source $script:ClientSource | `
+                ConvertTo-HttpMessage `
+                    -ContentMode Structured
 
-         # $serverProcess = $null
+            $serverReady = $false
+            $maxRetries = 10
+            do {
+                try {
+                    Invoke-WebRequest `
+                        -Uri $testServerUrl `
+                        -Headers $serverPingRequest.Headers `
+                        -Body $serverPingRequest.Body | Out-Null
+                    $serverReady = $true
+                } catch {
+                    Write-Verbose "Wait CloudEvents HTTP Test Server to start"
+                    Start-Sleep -Seconds 1
+                    $maxRetries--
+                }
+            } while (-not $serverReady -and $maxRetries -gt 0)
+            
+            if ($maxRetries -eq 0) {
+                throw "CloudEvents HTTP Test Server failed to start."
+            }
+        }
 
-         # . (Join-Path $PSScriptRoot 'ProtocolConstants.ps1')
+        AfterAll {
+            # Requests Stop CloudEvent Test Server
+            $serverStopRequest = `
+                New-CloudEvent `
+                -Id ([Guid]::NewGuid()) `
+                -Type $script:ServerStopType `
+                -Source $script:ClientSource | `
+                ConvertTo-HttpMessage `
+                -ContentMode Structured
 
-         # # Starts CloudEvent Test Server
-         # $usePowerShell = (Get-Process -Id $pid).ProcessName
-         # $serverScript = Join-Path $PSScriptRoot 'HttpServer.ps1'
-         # $serverProcessArguments = "-Command $serverScript -CloudEventsModulePath '$CloudEventsModulePath' -ServerUrl '$testServerUrl'"
+            Invoke-WebRequest `
+                -Uri $testServerUrl `
+                -Headers $serverStopRequest.Headers `
+                -Body $serverStopRequest.Body | Out-Null
 
-         # $serverProcess = Start-Process `
-            # -FilePath $usePowerShell `
-            # -ArgumentList $serverProcessArguments `
-            # -PassThru `
-            # -NoNewWindow
-      }
+            if ($serverProcess -ne $null -and `
+                    -not $serverProcess.HasExited) {
+                $serverProcess | Wait-Process
+            }
+        }
 
-      AfterAll {
-         # Requests Stop CloudEvent Test Server
-         # $serverStopRequest = `
-            # New-CloudEvent `
-               # -Id ([Guid]::NewGuid()) `
-               # -Type $script:ServerStopType `
-               # -Source $script:ClientSource | `
-            # ConvertTo-HttpMessage `
-               # -ContentMode Structured
+        It 'Echo binary content mode cloud events' {
+            # Arrange
+            $cloudEvent = New-CloudEvent `
+                -Type $script:EchoBinaryType `
+                -Source $script:ClientSource `
+                -Id 'integration-test-1' `
+                -Time (Get-Date) | `
+                Set-CloudEventJsonData -Data @{
+                'a1' = 'b'
+                'a2' = 'c'
+                'a3' = 'd'
+            }
 
-         # Invoke-WebRequest `
-               # -Uri $testServerUrl `
-               # -Headers $serverStopRequest.Headers `
-               # -Body $serverStopRequest.Body | Out-Null
+            # Act
 
-         # if ($serverProcess -ne $null -and `
-             # -not $serverProcess.HasExited) {
-            # $serverProcess | Wait-Process
-         # }
+            ## Convert CloudEvent to HTTP Message
+            $httpRequest = ConvertTo-HttpMessage `
+                -CloudEvent $cloudEvent `
+                -ContentMode Binary
 
-         Stop-Process $script:serverProcess
-      }
+            ## Invoke WebRequest with the HTTP Message
+            $httpResponse = Invoke-WebRequest `
+                -Uri $testServerUrl `
+                -Headers $httpRequest.Headers `
+                -Body $httpRequest.Body
 
-      It 'Tests WebServer' {
-          $result = Invoke-RestMethod -Method get -Uri http://localhost:8000/WeatherForecast
-          $result | Should -Not -Be $null
-      }
+            ## Convert HTTP Response to CloudEvent
+            $resultCloudEvent = ConvertFrom-HttpMessage `
+                -Headers $httpResponse.Headers `
+                -Body $httpResponse.Content
 
-      # It 'Echo binary content mode cloud events' {
-         # # Arrange
-         # $cloudEvent = New-CloudEvent `
-                  # -Type $script:EchoBinaryType `
-                  # -Source $script:ClientSource `
-                  # -Id 'integration-test-1' `
-                  # -Time (Get-Date) | `
-               # Set-CloudEventJsonData -Data @{
-                  # 'a1' = 'b'
-                  # 'a2' = 'c'
-                  # 'a3' = 'd'
-               # }
+            # Assert
 
-         # # Act
+            ## Assert echoed CloudEvent
+            $resultCloudEvent | Should -Not -Be $null
+            $resultCloudEvent.Source | Should -Be $script:ServerSource
+            $resultCloudEvent.Type | Should -Be $script:EchoBinaryType
+            $resultCloudEvent.Id | Should -Be $cloudEvent.Id
+            $resultCloudEvent.Time | Should -BeGreaterThan $cloudEvent.Time
 
-         # ## Convert CloudEvent to HTTP Message
-         # $httpRequest = ConvertTo-HttpMessage `
-               # -CloudEvent $cloudEvent `
-               # -ContentMode Binary
+            ## Assert Result CloudEvent Data
+            ## Read Data as Json
+            $resultData = $resultCloudEvent | Read-CloudEventJsonData
+            $resultData.a1 | Should -Be 'b'
+            $resultData.a2 | Should -Be 'c'
+            $resultData.a3 | Should -Be 'd'
+        }
 
-         # ## Invoke WebRequest with the HTTP Message
-         # $httpResponse = Invoke-WebRequest `
-               # -Uri $testServerUrl `
-               # -Headers $httpRequest.Headers `
-               # -Body $httpRequest.Body
+        It 'Echo binary content mode cloud events with XML data' {
+            # Arrange
+            $cloudEvent = New-CloudEvent `
+                -Type $script:EchoBinaryType `
+                -Source $script:ClientSource `
+                -Id 'integration-test-2' `
+                -Time (Get-Date) | `
+                Set-CloudEventXmlData -Data @{
+                'a1' = @{
+                    'a2' = 'c'
+                    'a3' = 'd'
+                }
+            } `
+                -AttributesKeysInElementAttributes $false
 
-         # ## Convert HTTP Response to CloudEvent
-         # $resultCloudEvent = ConvertFrom-HttpMessage `
-               # -Headers $httpResponse.Headers `
-               # -Body $httpResponse.Content
+            # Act
 
-         # # Assert
+            ## Convert CloudEvent to HTTP Message
+            $httpRequest = ConvertTo-HttpMessage `
+                -CloudEvent $cloudEvent `
+                -ContentMode Binary
 
-         # ## Assert echoed CloudEvent
-         # $resultCloudEvent | Should -Not -Be $null
-         # $resultCloudEvent.Source | Should -Be $script:ServerSource
-         # $resultCloudEvent.Type | Should -Be $script:EchoBinaryType
-         # $resultCloudEvent.Id | Should -Be $cloudEvent.Id
-         # $resultCloudEvent.Time | Should -BeGreaterThan $cloudEvent.Time
+            ## Invoke WebRequest with the HTTP Message
+            $httpResponse = Invoke-WebRequest `
+                -Uri $testServerUrl `
+                -Headers $httpRequest.Headers `
+                -Body $httpRequest.Body
 
-         # ## Assert Result CloudEvent Data
-         # ## Read Data as Json
-         # $resultData = $resultCloudEvent | Read-CloudEventJsonData
-         # $resultData.a1 | Should -Be 'b'
-         # $resultData.a2 | Should -Be 'c'
-         # $resultData.a3 | Should -Be 'd'
-      # }
+            ## Convert HTTP Response to CloudEvent
+            $resultCloudEvent = ConvertFrom-HttpMessage `
+                -Headers $httpResponse.Headers `
+                -Body $httpResponse.Content
 
-      # It 'Echo binary content mode cloud events with XML data' {
-         # # Arrange
-         # $cloudEvent = New-CloudEvent `
-                  # -Type $script:EchoBinaryType `
-                  # -Source $script:ClientSource `
-                  # -Id 'integration-test-2' `
-                  # -Time (Get-Date) | `
-               # Set-CloudEventXmlData -Data @{
-                  # 'a1' = @{
-                     # 'a2' = 'c'
-                     # 'a3' = 'd'
-                  # }
-               # } `
-               # -AttributesKeysInElementAttributes $false
+            # Assert
 
-         # # Act
+            ## Assert echoed CloudEvent
+            $resultCloudEvent | Should -Not -Be $null
+            $resultCloudEvent.Source | Should -Be $script:ServerSource
+            $resultCloudEvent.Type | Should -Be $script:EchoBinaryType
+            $resultCloudEvent.Id | Should -Be $cloudEvent.Id
+            $resultCloudEvent.Time | Should -BeGreaterThan $cloudEvent.Time
 
-         # ## Convert CloudEvent to HTTP Message
-         # $httpRequest = ConvertTo-HttpMessage `
-               # -CloudEvent $cloudEvent `
-               # -ContentMode Binary
+            ## Assert Result CloudEvent Data
+            ## Read Data as Xml
+            $resultData = $resultCloudEvent | Read-CloudEventXmlData -ConvertMode 'SkipAttributes'
+            $resultData -is [hashtable] | Should -Be $true
+            $resultData.a1 -is [hashtable] | Should -Be $true
+            $resultData.a1.a2 | Should -Be 'c'
+            $resultData.a1.a3 | Should -Be 'd'
+        }
 
-         # ## Invoke WebRequest with the HTTP Message
-         # $httpResponse = Invoke-WebRequest `
-               # -Uri $testServerUrl `
-               # -Headers $httpRequest.Headers `
-               # -Body $httpRequest.Body
+        It 'Echo structured content mode cloud events' {
+            # Arrange
+            $cloudEvent = New-CloudEvent `
+                -Type $script:EchoStructuredType `
+                -Source $script:ClientSource `
+                -Id 'integration-test-3' `
+                -Time (Get-Date) | `
+                Set-CloudEventJsonData -Data @{
+                'b1' = 'd'
+                'b2' = 'e'
+                'b3' = 'f'
+            }
 
-         # ## Convert HTTP Response to CloudEvent
-         # $resultCloudEvent = ConvertFrom-HttpMessage `
-               # -Headers $httpResponse.Headers `
-               # -Body $httpResponse.Content
+            # Act
 
-         # # Assert
+            ## Convert CloudEvent to HTTP Message
+            $httpRequest = ConvertTo-HttpMessage `
+                -CloudEvent $cloudEvent `
+                -ContentMode Structured
 
-         # ## Assert echoed CloudEvent
-         # $resultCloudEvent | Should -Not -Be $null
-         # $resultCloudEvent.Source | Should -Be $script:ServerSource
-         # $resultCloudEvent.Type | Should -Be $script:EchoBinaryType
-         # $resultCloudEvent.Id | Should -Be $cloudEvent.Id
-         # $resultCloudEvent.Time | Should -BeGreaterThan $cloudEvent.Time
+            ## Invoke WebRequest with the HTTP Message
+            $httpResponse = Invoke-WebRequest `
+                -Uri $testServerUrl `
+                -Headers $httpRequest.Headers `
+                -Body $httpRequest.Body
 
-         # ## Assert Result CloudEvent Data
-         # ## Read Data as Xml
-         # $resultData = $resultCloudEvent | Read-CloudEventXmlData -ConvertMode 'SkipAttributes'
-         # $resultData -is [hashtable] | Should -Be $true
-         # $resultData.a1 -is [hashtable] | Should -Be $true
-         # $resultData.a1.a2 | Should -Be 'c'
-         # $resultData.a1.a3 | Should -Be 'd'
-      # }
+            ## Convert HTTP Response to CloudEvent
+            $resultCloudEvent = ConvertFrom-HttpMessage `
+                -Headers $httpResponse.Headers `
+                -Body $httpResponse.Content
 
-      # It 'Echo structured content mode cloud events' {
-         # # Arrange
-         # $cloudEvent = New-CloudEvent `
-                  # -Type $script:EchoStructuredType `
-                  # -Source $script:ClientSource `
-                  # -Id 'integration-test-3' `
-                  # -Time (Get-Date) | `
-               # Set-CloudEventJsonData -Data @{
-                  # 'b1' = 'd'
-                  # 'b2' = 'e'
-                  # 'b3' = 'f'
-               # }
+            # Assert
 
-         # # Act
+            ## Assert echoed CloudEvent
+            $resultCloudEvent | Should -Not -Be $null
+            $resultCloudEvent.Source | Should -Be $script:ServerSource
+            $resultCloudEvent.Type | Should -Be $script:EchoStructuredType
+            $resultCloudEvent.Id | Should -Be $cloudEvent.Id
+            $resultCloudEvent.Time | Should -BeGreaterThan $cloudEvent.Time
 
-         # ## Convert CloudEvent to HTTP Message
-         # $httpRequest = ConvertTo-HttpMessage `
-               # -CloudEvent $cloudEvent `
-               # -ContentMode Structured
+            ## Assert Result CloudEvent Data
+            ## Read Data as Json
+            $resultData = $resultCloudEvent | Read-CloudEventJsonData
+            $resultData.b1 | Should -Be 'd'
+            $resultData.b2 | Should -Be 'e'
+            $resultData.b3 | Should -Be 'f'
+        }
 
-         # ## Invoke WebRequest with the HTTP Message
-         # $httpResponse = Invoke-WebRequest `
-               # -Uri $testServerUrl `
-               # -Headers $httpRequest.Headers `
-               # -Body $httpRequest.Body
+        It 'Echo structured content mode cloud events with XML data' {
+            # Arrange
+            $cloudEvent = New-CloudEvent `
+                -Type $script:EchoStructuredType `
+                -Source $script:ClientSource `
+                -Id 'integration-test-4' `
+                -Time (Get-Date) | `
+                Set-CloudEventXmlData -Data @{
+                'b1' = @{
+                    'b2' = 'e'
+                    'b3' = 'f'
+                }
+            } `
+                -AttributesKeysInElementAttributes $false
 
-         # ## Convert HTTP Response to CloudEvent
-         # $resultCloudEvent = ConvertFrom-HttpMessage `
-               # -Headers $httpResponse.Headers `
-               # -Body $httpResponse.Content
+            # Act
 
-         # # Assert
+            ## Convert CloudEvent to HTTP Message
+            $httpRequest = ConvertTo-HttpMessage `
+                -CloudEvent $cloudEvent `
+                -ContentMode Structured
 
-         # ## Assert echoed CloudEvent
-         # $resultCloudEvent | Should -Not -Be $null
-         # $resultCloudEvent.Source | Should -Be $script:ServerSource
-         # $resultCloudEvent.Type | Should -Be $script:EchoStructuredType
-         # $resultCloudEvent.Id | Should -Be $cloudEvent.Id
-         # $resultCloudEvent.Time | Should -BeGreaterThan $cloudEvent.Time
+            ## Invoke WebRequest with the HTTP Message
+            $httpResponse = Invoke-WebRequest `
+                -Uri $testServerUrl `
+                -Headers $httpRequest.Headers `
+                -Body $httpRequest.Body
 
-         # ## Assert Result CloudEvent Data
-         # ## Read Data as Json
-         # $resultData = $resultCloudEvent | Read-CloudEventJsonData
-         # $resultData.b1 | Should -Be 'd'
-         # $resultData.b2 | Should -Be 'e'
-         # $resultData.b3 | Should -Be 'f'
-      # }
+            ## Convert HTTP Response to CloudEvent
+            $resultCloudEvent = ConvertFrom-HttpMessage `
+                -Headers $httpResponse.Headers `
+                -Body $httpResponse.Content
 
-      # It 'Echo structured content mode cloud events with XML data' {
-         # # Arrange
-         # $cloudEvent = New-CloudEvent `
-                  # -Type $script:EchoStructuredType `
-                  # -Source $script:ClientSource `
-                  # -Id 'integration-test-4' `
-                  # -Time (Get-Date) | `
-               # Set-CloudEventXmlData -Data @{
-                  # 'b1' = @{
-                     # 'b2' = 'e'
-                     # 'b3' = 'f'
-                  # }
-               # } `
-               # -AttributesKeysInElementAttributes $false
+            # Assert
 
-         # # Act
+            ## Assert echoed CloudEvent
+            $resultCloudEvent | Should -Not -Be $null
+            $resultCloudEvent.Source | Should -Be $script:ServerSource
+            $resultCloudEvent.Type | Should -Be $script:EchoStructuredType
+            $resultCloudEvent.Id | Should -Be $cloudEvent.Id
+            $resultCloudEvent.Time | Should -BeGreaterThan $cloudEvent.Time
 
-         # ## Convert CloudEvent to HTTP Message
-         # $httpRequest = ConvertTo-HttpMessage `
-               # -CloudEvent $cloudEvent `
-               # -ContentMode Structured
+            ## Assert Result CloudEvent Data
+            ## Read Data as Xml
+            $resultData = $resultCloudEvent | Read-CloudEventXmlData -ConvertMode 'SkipAttributes'
+            $resultData -is [hashtable] | Should -Be $true
+            $resultData.b1 -is [hashtable] | Should -Be $true
+            $resultData.b1.b2 | Should -Be 'e'
+            $resultData.b1.b3 | Should -Be 'f'
+        }
 
-         # ## Invoke WebRequest with the HTTP Message
-         # $httpResponse = Invoke-WebRequest `
-               # -Uri $testServerUrl `
-               # -Headers $httpRequest.Headers `
-               # -Body $httpRequest.Body
+        It 'Send cloud event expecting no result' {
+            # Arrange
+            $cloudEvent = New-CloudEvent `
+                -Type 'no-content' `
+                -Source $script:ClientSource `
+                -Id 'integration-test-5' `
+                -Time (Get-Date) | `
+                Set-CloudEventData `
+                -Data 'This is text data' `
+                -DataContentType 'application/text'
 
-         # ## Convert HTTP Response to CloudEvent
-         # $resultCloudEvent = ConvertFrom-HttpMessage `
-               # -Headers $httpResponse.Headers `
-               # -Body $httpResponse.Content
+            # Act
 
-         # # Assert
+            ## Convert CloudEvent to HTTP Message
+            $httpRequest = ConvertTo-HttpMessage `
+                -CloudEvent $cloudEvent `
+                -ContentMode Structured
 
-         # ## Assert echoed CloudEvent
-         # $resultCloudEvent | Should -Not -Be $null
-         # $resultCloudEvent.Source | Should -Be $script:ServerSource
-         # $resultCloudEvent.Type | Should -Be $script:EchoStructuredType
-         # $resultCloudEvent.Id | Should -Be $cloudEvent.Id
-         # $resultCloudEvent.Time | Should -BeGreaterThan $cloudEvent.Time
+            ## Invoke WebRequest with the HTTP Message
+            $httpResponse = Invoke-WebRequest `
+                -Uri $testServerUrl `
+                -Headers $httpRequest.Headers `
+                -Body $httpRequest.Body
 
-         # ## Assert Result CloudEvent Data
-         # ## Read Data as Xml
-         # $resultData = $resultCloudEvent | Read-CloudEventXmlData -ConvertMode 'SkipAttributes'
-         # $resultData -is [hashtable] | Should -Be $true
-         # $resultData.b1 -is [hashtable] | Should -Be $true
-         # $resultData.b1.b2 | Should -Be 'e'
-         # $resultData.b1.b3 | Should -Be 'f'
-      # }
-
-      # It 'Send cloud event expecting no result' {
-         # # Arrange
-         # $cloudEvent = New-CloudEvent `
-                  # -Type 'no-content' `
-                  # -Source $script:ClientSource `
-                  # -Id 'integration-test-5' `
-                  # -Time (Get-Date) | `
-               # Set-CloudEventData `
-                  # -Data 'This is text data' `
-                  # -DataContentType 'application/text'
-
-         # # Act
-
-         # ## Convert CloudEvent to HTTP Message
-         # $httpRequest = ConvertTo-HttpMessage `
-               # -CloudEvent $cloudEvent `
-               # -ContentMode Structured
-
-         # ## Invoke WebRequest with the HTTP Message
-         # $httpResponse = Invoke-WebRequest `
-               # -Uri $testServerUrl `
-               # -Headers $httpRequest.Headers `
-               # -Body $httpRequest.Body
-
-         # # Assert
-         # $httpResponse.StatusCode | Should -Be ([int]([System.Net.HttpStatusCode]::NoContent))
-      # }
-   }
+            # Assert
+            $httpResponse.StatusCode | Should -Be ([int]([System.Net.HttpStatusCode]::NoContent))
+        }
+    }
 }

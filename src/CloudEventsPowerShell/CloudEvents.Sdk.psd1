@@ -51,7 +51,7 @@ PowerShellVersion = '7.0'
 # RequiredModules = @()
 
 # Assemblies that must be loaded prior to importing this module
-RequiredAssemblies = @('CloudNative.CloudEvents.dll')
+RequiredAssemblies = @('CloudNative.CloudEvents.dll', 'CloudNative.CloudEvents.NewtonsoftJson.dll')
 
 # Script files (.ps1) that are run in the caller's environment prior to importing this module.
 # ScriptsToProcess = @()

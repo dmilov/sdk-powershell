@@ -7,6 +7,7 @@ Describe "ConvertTo-HttpMessage Function Tests" {
    BeforeAll {
       $expectedSpecVersion = '1.0'
       $expectedStructuredContentType = 'application/cloudevents+json'
+      $env:PSModulePath += ';C:\git-repos\github\sdk-powershell\CloudEvents.Sdk'
    }
 
    Context "Converts CloudEvent in Binary Content Mode" {
@@ -16,7 +17,7 @@ Describe "ConvertTo-HttpMessage Function Tests" {
          $expectedType = 'test'
          $expectedSource  = 'urn:test'
          $expectedId  = 'test-id-1'
-         $expectedTime  = Get-Date -Year 2021 -Month 1 -Day 18 -Hour 12 -Minute 30 -Second 0
+         $expectedTime  = (Get-Date -Year 2021 -Month 1 -Day 18 -Hour 12 -Minute 30 -Second 0 -MilliSecond 0).ToUniversalTime()
          $expectedDataContentType = 'application/json'
 
          $cloudEvent = New-CloudEvent `
@@ -44,7 +45,7 @@ Describe "ConvertTo-HttpMessage Function Tests" {
          $actual.Headers['ce-source'] | Should -Be $expectedSource
          $actual.Headers['ce-specversion'] | Should -Be $expectedSpecVersion
          $actual.Headers['ce-type'] | Should -Be $expectedType
-         $actual.Headers['ce-time'] | Should -Be '2021-01-18 12:30:00Z'
+         $actual.Headers['ce-time'] | Should -Be $expectedTime.ToString('yyyy-MM-ddTHH:mm:ssZ')
          $actual.Headers['ce-id'] | Should -Be $expectedId
 
          ## Assert Body
@@ -110,7 +111,7 @@ Describe "ConvertTo-HttpMessage Function Tests" {
          $expectedType = 'test'
          $expectedSource  = 'urn:test'
          $expectedId  = 'test-id-1'
-         $expectedTime  = Get-Date -Year 2021 -Month 1 -Day 18 -Hour 12 -Minute 30 -Second 0
+         $expectedTime  = (Get-Date -Year 2021 -Month 1 -Day 18 -Hour 12 -Minute 30 -Second 0 -MilliSecond 0).ToUniversalTime()
          $expectedDataContentType = 'application/json'
 
          $cloudEvent = New-CloudEvent `
@@ -141,7 +142,7 @@ Describe "ConvertTo-HttpMessage Function Tests" {
          $actual.Headers['ce-source'] | Should -Be $expectedSource
          $actual.Headers['ce-specversion'] | Should -Be $expectedSpecVersion
          $actual.Headers['ce-type'] | Should -Be $expectedType
-         $actual.Headers['ce-time'] | Should -Be '2021-01-18 12:30:00Z'
+         $actual.Headers['ce-time'] | Should -Be $expectedTime.ToString('yyyy-MM-ddTHH:mm:ssZ')
          $actual.Headers['ce-id'] | Should -Be $expectedId
 
          ## Assert Body
@@ -172,7 +173,7 @@ Describe "ConvertTo-HttpMessage Function Tests" {
          $actualDecodedData.key3 | Should -Be $expectedData.key3
       }
 
-      It 'Converts a CloudEvent with required properties and application/xml format data' {
+      It 'Should throw trying to converts a CloudEvent with required properties and application/xml format data' {
          # Arrange
          $expectedId = ([Guid]::NewGuid().ToString())
          $expectedType = 'test'
@@ -190,39 +191,9 @@ Describe "ConvertTo-HttpMessage Function Tests" {
                         -Data $expectedData `
                         -DataContentType $expectedDataContentType
 
-         # Act
-         $actual = $cloudEvent | ConvertTo-HttpMessage -ContentMode Structured
-
-         # Assert
-         $actual | Should -Not -Be $null
-         $actual.Headers | Should -Not -Be $null
-         $actual.Body | Should -Not -Be $null
-
-         ## Assert Headers
-         $headerContentTypes = $actual.Headers['Content-Type'].ToString().Split(';')
-         $headerContentTypes[0].Trim() | Should -Be $expectedStructuredContentType
-         $headerContentTypes[1].Trim() | Should -Be 'charset=utf-8'
-         $actual.Headers['ce-source'] | Should -Be $expectedSource
-         $actual.Headers['ce-specversion'] | Should -Be $expectedSpecVersion
-         $actual.Headers['ce-type'] | Should -Be $expectedType
-         $actual.Headers['ce-id'] | Should -Be $expectedId
-
-         ## Assert Body
-
-         ## Expected Body is
-         ## {
-         ##   "specversion": "1.0",
-         ##   "type": "test",
-         ##   "source": "urn:test",
-         ##   "datacontenttype": "application/xml",
-         ##   "data": "<much wow=/"xml/"/>"
-         ## }
-         $actualDecodedBody = [Text.Encoding]::UTF8.GetString($actual.Body) | ConvertFrom-Json -Depth 1
-         $actualDecodedBody.specversion | Should -Be $expectedSpecVersion
-         $actualDecodedBody.type | Should -Be $expectedType
-         $actualDecodedBody.source | Should -Be $expectedSource
-         $actualDecodedBody.datacontenttype | Should -Be $expectedDataContentType
-         $actualDecodedBody.data | Should -Be $expectedData
+         # Act & Assert
+         { $cloudEvent | ConvertTo-HttpMessage -ContentMode Structured } | `
+         Should -Throw 'Cannot convert structured mode cloud event. Only json content type is supported.'
       }
    }
 }

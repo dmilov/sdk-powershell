@@ -29,7 +29,7 @@ Describe "New-CloudEvent Function Tests" {
          $expectedType = 'test'
          $expectedSource  = 'urn:test'
          $expectedId  = 'test-id-1'
-         $expectedTime  = Get-Date -Year 2021 -Month 1 -Day 18 -Hour 12 -Minute 30 -Second 0
+         $expectedTime  = Get-Date -Year 2021 -Month 1 -Day 18 -Hour 12 -Minute 30 -Second 0 -Millisecond 0
 
          # Act
          $actual = New-CloudEvent `
@@ -43,7 +43,7 @@ Describe "New-CloudEvent Function Tests" {
          $actual.Type | Should -Be $expectedType
          $actual.Source | Should -Be $expectedSource
          $actual.Id | Should -Be $expectedId
-         $actual.Time | Should -Be $expectedTime
+         $actual.Time | Should -Be ([DateTimeOffset]($expectedTime))
       }
    }
 }

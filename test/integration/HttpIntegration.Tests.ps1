@@ -28,6 +28,35 @@ Describe "Client-Server Integration Tests" {
                 -ArgumentList $serverProcessArguments `
                 -PassThru `
                 -NoNewWindow
+
+            # Wait Server to Start
+            $serverPingRequest = `
+                New-CloudEvent `
+                    -Id ([Guid]::NewGuid()) `
+                    -Type $script:ServerPingType `
+                    -Source $script:ClientSource | `
+                ConvertTo-HttpMessage `
+                    -ContentMode Structured
+
+            $serverReady = $false
+            $maxRetries = 10
+            do {
+                try {
+                    Invoke-WebRequest `
+                        -Uri $testServerUrl `
+                        -Headers $serverPingRequest.Headers `
+                        -Body $serverPingRequest.Body | Out-Null
+                    $serverReady = $true
+                } catch {
+                    Write-Verbose "Wait CloudEvents HTTP Test Server to start"
+                    Start-Sleep -Seconds 1
+                    $maxRetries--
+                }
+            } while (-not $serverReady -and $maxRetries -gt 0)
+            
+            if ($maxRetries -eq 0) {
+                throw "CloudEvents HTTP Test Server failed to start."
+            }
         }
 
         AfterAll {

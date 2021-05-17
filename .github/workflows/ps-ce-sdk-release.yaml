@@ -1,0 +1,44 @@
+# **************************************************************************
+#  Copyright (c) Cloud Native Foundation.
+#  SPDX-License-Identifier: Apache-2.0
+# **************************************************************************
+
+name: Release
+
+on:
+  create:
+    tags:
+      - v*
+
+jobs:
+  psgallery-publish:
+    name: Release CloudEvents.Sdk Module
+    runs-on: "ubuntu-latest"
+
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+
+      - name: Build and Test
+        shell: pwsh
+        run: ./build.ps1 -OutputDir 'release' -TestsType all -ExitProcess
+
+      - name: Publish to PSGallery
+        shell: pwsh
+        run: ./publish.ps1 -ModuleReleaseDir 'release' -NuGetApiKey ${{ secrets.CLOUDEVENTS_SDK_PUBLISHER_API_KEY }}
+
+      - name: Create CHANGELOG
+        env:
+          IMAGE: quay.io/git-chglog/git-chglog
+          # https://quay.io/repository/git-chglog/git-chglog from tag v0.14.2
+          IMAGE_SHA: 998e89dab8dd8284cfff5f8cfb9e9af41fe3fcd4671f2e86a180e453c20959e3
+        run: |
+          # generate CHANGELOG for this Github release tag only
+          docker run --rm -v $PWD:/workdir ${IMAGE}@sha256:${IMAGE_SHA} -o RELEASE_CHANGELOG.md $(basename "${{ github.ref }}" )
+
+      - name: Create Github Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create ${{ github.ref }} -F $PWD/RELEASE_CHANGELOG.md

@@ -44,4 +44,4 @@ if ( $null -ne $psGalleryModule -and `
 }
 
 Write-Host "Performing operation: Publish-Module -Name $moduleName -RequiredVersion $($localModule.Version) -NuGetApiKey *** -Repository PSGallery -Confirm:`$false"
-Publish-Module -Name $moduleName -RequiredVersion $localModule.Version -NuGetApiKey $NuGetApiKey -Repository PSGallery -Confirm:$false -ErrorAction Stop
+#Publish-Module -Name $moduleName -RequiredVersion $localModule.Version -NuGetApiKey $NuGetApiKey -Repository PSGallery -Confirm:$false -ErrorAction Stop
